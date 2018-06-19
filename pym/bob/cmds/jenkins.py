@@ -1556,11 +1556,41 @@ class JenkinsConnection:
                     .format(name, response.status, response.reason))
 
     def updateConfig(self, name, jobXML):
-        response = self._send("POST", "job/" + name + "/config.xml", jobXML)
+        updateScript = """import jenkins.*
+import jenkins.model.*
+import hudson.*
+import hudson.model.*
+import java.io.*
+import java.nio.charset.StandardCharsets
+import javax.xml.transform.stream.*
+
+config = '''{CONFIG}'''
+
+InputStream stream = new StringBufferInputStream(config);
+
+job = Jenkins.getInstance().getItemByFullName('{NAME}', AbstractItem)
+
+if (job == null) {{
+  println "Constructing job"
+  Jenkins.getInstance().createProjectFromXML('{NAME}', stream);
+}}
+else {{
+  println "Updating job"
+  job.updateByXml(new StreamSource(stream));
+}}
+"""
+        body = urllib.parse.urlencode({"script" : updateScript.format(CONFIG=jobXML.decode('utf-8'), NAME=name)})
+        headers = self.__headers.copy()
+        headers.update({
+            "Content-Type" : "application/x-www-form-urlencoded",
+            "Accept" : "text/plain"
+        })
+
+        response = self._send("POST", "scriptText" , body, headers)
         if response.status != 200:
             raise BuildError("Error updating '{}': HTTP error: {} {}"
                 .format(name, response.status, response.reason))
-        response.read()
+        print(response.read())
 
     def schedule(self, name):
         ret = True
