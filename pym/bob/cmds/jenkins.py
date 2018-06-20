@@ -1565,9 +1565,8 @@ import java.nio.charset.StandardCharsets
 import javax.xml.transform.stream.*
 
 config = '''{CONFIG}'''
-
-InputStream stream = new StringBufferInputStream(config);
-
+ /* InputStream stream = new StringBufferInputStream(config);*/
+InputStream stream = new ByteArrayInputStream(config.getBytes('utf-8'));
 job = Jenkins.getInstance().getItemByFullName('{NAME}', AbstractItem)
 
 if (job == null) {{
@@ -1575,11 +1574,11 @@ if (job == null) {{
   Jenkins.getInstance().createProjectFromXML('{NAME}', stream);
 }}
 else {{
-  println "Updating job"
   job.updateByXml(new StreamSource(stream));
+  println "Updated job"
 }}
 """
-        body = urllib.parse.urlencode({"script" : updateScript.format(CONFIG=jobXML.decode('utf-8'), NAME=name)})
+        body = urllib.parse.urlencode({"script" : updateScript.format(CONFIG=jobXML.decode('utf-8').replace('\\','\\\\'), NAME=name)})
         headers = self.__headers.copy()
         headers.update({
             "Content-Type" : "application/x-www-form-urlencoded",
@@ -1590,7 +1589,10 @@ else {{
         if response.status != 200:
             raise BuildError("Error updating '{}': HTTP error: {} {}"
                 .format(name, response.status, response.reason))
-        print(response.read())
+        groovy_response = response.read().decode('utf-8')
+        if "Updated Job" not in groovy_response:
+            raise BuildError("Error updating '{}': Groovy error: {} \n script: {}"
+                .format(name, groovy_response, jobXML.decode('utf-8')))
 
     def schedule(self, name):
         ret = True
