@@ -1583,18 +1583,18 @@ else {{
         stream = "Vector<InputStream> streams = new Vector<>();"
         config = jobXML.decode('utf-8').replace('\\','\\\\')
 
-        configChunks = [ config[ i : i+65535] for i in range(0, len(x), 65535]
-        print(configChunks)
+        configChunks = [ config[ i : i+65535] for i in range(0, len(config), 65535)]
 
         i = 0
         for chunk in configChunks:
-            stream += "chunk"+i+"='''"+chunk+"'''\n"
-            stream += "streams.add(chunk"+i+");\n"
+            stream += "chunk"+str(i)+"='''"+chunk+"'''\n"
+            stream += "InputStream input"+str(i)+"= new ByteArrayInputStream(chunk"+str(i)+".getBytes('utf-8'))\n"
+            stream += "streams.add(input"+str(i)+");\n"
             i+=1
 
-        stream += "SequenceInputStream stream =  new SequenceInputStream(streams.elements()))"
+        stream += "SequenceInputStream stream =  new SequenceInputStream(streams.elements())"
 
-        body = urllib.parse.urlencode({"script" : updateScript.format(CONFIG=, NAME=name)})
+        body = urllib.parse.urlencode({"script" : updateScript.format(STREAMS=stream, NAME=name)})
         headers = self.__headers.copy()
         headers.update({
             "Content-Type" : "application/x-www-form-urlencoded",
@@ -1606,9 +1606,9 @@ else {{
             raise BuildError("Error updating '{}': HTTP error: {} {}"
                 .format(name, response.status, response.reason))
         groovy_response = response.read().decode('utf-8')
-        if "Updated Job" not in groovy_response:
+        if "Updated job" not in groovy_response:
             raise BuildError("Error updating '{}': Groovy error: {} \n script: {}"
-                .format(name, groovy_response, jobXML.decode('utf-8')))
+                .format(name, groovy_response, updateScript.format(STREAMS=stream, NAME=name)))
 
     def schedule(self, name):
         ret = True
