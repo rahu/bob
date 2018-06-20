@@ -1564,9 +1564,8 @@ import java.io.*
 import java.nio.charset.StandardCharsets
 import javax.xml.transform.stream.*
 
-config = '''{CONFIG}'''
- /* InputStream stream = new StringBufferInputStream(config);*/
-InputStream stream = new ByteArrayInputStream(config.getBytes('utf-8'));
+{STREAMS}
+
 job = Jenkins.getInstance().getItemByFullName('{NAME}', AbstractItem)
 
 if (job == null) {{
@@ -1578,7 +1577,24 @@ else {{
   println "Updated job"
 }}
 """
-        body = urllib.parse.urlencode({"script" : updateScript.format(CONFIG=jobXML.decode('utf-8').replace('\\','\\\\'), NAME=name)})
+        # maximum string length in java is 64K. Split configXML into 64K
+        # junks and cat Inputstreams.
+        streams = ""
+        stream = "Vector<InputStream> streams = new Vector<>();"
+        config = jobXML.decode('utf-8').replace('\\','\\\\')
+
+        configChunks = [ config[ i : i+65535] for i in range(0, len(x), 65535]
+        print(configChunks)
+
+        i = 0
+        for chunk in configChunks:
+            stream += "chunk"+i+"='''"+chunk+"'''\n"
+            stream += "streams.add(chunk"+i+");\n"
+            i+=1
+
+        stream += "SequenceInputStream stream =  new SequenceInputStream(streams.elements()))"
+
+        body = urllib.parse.urlencode({"script" : updateScript.format(CONFIG=, NAME=name)})
         headers = self.__headers.copy()
         headers.update({
             "Content-Type" : "application/x-www-form-urlencoded",
