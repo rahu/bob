@@ -63,29 +63,27 @@ def generateFile(entries, fileName):
         fileName.write(e + "\n")
     fileName.close()
 
-def addRunStep(outFile, num, cmd, directory):
-   outFile.write('<valuemap type="QVariantMap" key="ProjectExplorer.Target.RunConfiguration.' + str(num) + '">')
-   outFile.write(' <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.Arguments"></value>')
-   outFile.write(' <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.Executable">' + cmd + '</value>')
-   outFile.write(' <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.WorkingDirectory">' + directory + '</value>')
-   outFile.write(' <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">' + cmd + '</value>')
-   outFile.write(' <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>')
-   outFile.write(' <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.CustomExecutableRunConfiguration</value>')
-   outFile.write(' <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>')
-   outFile.write(' <value type="bool" key="RunConfiguration.UseCppDebuggerAuto">true</value>')
-   outFile.write(' <value type="bool" key="RunConfiguration.UseMultiProcess">false</value>')
-   outFile.write(' <value type="bool" key="RunConfiguration.UseQmlDebugger">false</value>')
-   outFile.write(' <value type="bool" key="RunConfiguration.UseQmlDebuggerAuto">true</value>')
-   outFile.write('</valuemap>')
-
-RunStep = namedtuple("RunStep", "dir cmd")
-
-def addRunSteps(outFile, runTargets):
-    runTargetCnt = 0
-    for directory,cmd in runTargets:
-        addRunStep(outFile, runTargetCnt, cmd, directory)
-        runTargetCnt += 1
-    outFile.write('<value type="int" key="ProjectExplorer.Target.RunConfigurationCount">' + str(runTargetCnt) + '</value>')
+def addRunStep(outFile, num, cmd, directory, env):
+   outFile.write('<valuemap type="QVariantMap" key="ProjectExplorer.Target.RunConfiguration.' + str(num) + '">\n')
+   outFile.write(' <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.Arguments"></value>\n')
+   outFile.write(' <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.Executable">' + cmd + '</value>\n')
+   outFile.write(' <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.WorkingDirectory">' + directory + '</value>\n')
+   outFile.write(' <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">' + cmd + '</value>\n')
+   outFile.write(' <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>\n')
+   outFile.write(' <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.CustomExecutableRunConfiguration</value>\n')
+   outFile.write(' <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>\n')
+   outFile.write(' <value type="bool" key="RunConfiguration.UseCppDebuggerAuto">true</value>\n')
+   outFile.write(' <value type="bool" key="RunConfiguration.UseMultiProcess">false</value>\n')
+   outFile.write(' <value type="bool" key="RunConfiguration.UseQmlDebugger">false</value>\n')
+   outFile.write(' <value type="bool" key="RunConfiguration.UseQmlDebuggerAuto">true</value>\n')
+   # add environment if requested
+   if (env):
+       outFile.write(' <value type="int" key="PE.EnvironmentAspect.Base">0</value>\n')
+       outFile.write(' <valuelist type="QVariantList" key="PE.EnvironmentAspect.Changes">\n')
+       for k,v in env.items():
+           outFile.write('  <value type="QString">' + k + '=' + v + '</value>\n')
+       outFile.write(' </valuelist>\n')
+   outFile.write('</valuemap>\n')
 
 def addBuildConfig(outFile, num, name, buildArgs, buildMeFile):
     outFile.write('<valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.' + str(num) + '">\n')
@@ -194,6 +192,8 @@ def qtProjectGenerator(package, argv, extra):
         help="Additional include directories, will be placed at the beginning of the include list.")
     parser.add_argument('-C', dest="config_defs", default=[], action='append',
         help="Add line to .config file. Can be used to specify preprocessor defines used by the QTCreator.")
+    parser.add_argument('-E', dest="add_environment", default=False, action='store_true',
+        help="Add the packageStep Environment to the run configuration.")
 
     args = parser.parse_args(argv)
     extra = " ".join(quote(e) for e in extra)
@@ -474,19 +474,7 @@ def qtProjectGenerator(package, argv, extra):
  </data>
 </qtcreator>"""
 
-        # find all executables in package dir
-        runTargets = []
-        magic = summonMagic()
-        if package.getPackageStep().isValid():
-            packageDir = package.getPackageStep().getWorkspacePath()
-            for root, directory, filenames in os.walk(packageDir):
-                for filename in filenames:
-                    try:
-                        ftype = magic.from_file(os.path.join(root, filename))
-                        if 'executable' in ftype and 'x86' in ftype:
-                            runTargets.append(RunStep(os.path.join(cwd(), root), filename))
-                    except OSError:
-                        pass
+
 
         with open(sharedFile, 'w') as sharedFile:
             sharedFile.write(template_head)
@@ -502,7 +490,23 @@ def qtProjectGenerator(package, argv, extra):
             addBuildSteps(sharedFile, buildMeFile, args.buildCfg)
             sharedFile.write('   <value type="int" key="ProjectExplorer.Target.DeployConfigurationCount">0</value>\n')
             sharedFile.write('   <valuemap type="QVariantMap" key="ProjectExplorer.Target.PluginSettings"/>\n')
-            addRunSteps(sharedFile, runTargets)
+
+            # find all executables in package dir
+            magic = summonMagic()
+            runTargetCnt = 0
+            if package.getPackageStep().isValid():
+                packageDir = package.getPackageStep().getWorkspacePath()
+                for root, directory, filenames in os.walk(packageDir):
+                    for filename in filenames:
+                        try:
+                            ftype = magic.from_file(os.path.join(root, filename))
+                            if 'executable' in ftype and 'x86' in ftype:
+                                addRunStep(sharedFile, runTargetCnt, filename, os.path.join(cwd(), root), package.getPackageStep().getEnv() if args.add_environment else None)
+                                runTargetCnt += 1
+                        except OSError:
+                            pass
+
+            sharedFile.write('<value type="int" key="ProjectExplorer.Target.RunConfigurationCount">' + str(runTargetCnt) + '</value>')
             sharedFile.write('  </valuemap>\n')
             sharedFile.write(' </data>\n')
             sharedFile.write(template_foot)
